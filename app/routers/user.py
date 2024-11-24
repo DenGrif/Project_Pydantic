@@ -29,11 +29,9 @@ async def user_by_id(user_id: int, db: Annotated[Session, Depends(get_db)]):
 # Маршрут для создания нового пользователя
 @router.post("/create", response_model=UserResponse)
 async def create_user(user: CreateUser, db: Session = Depends(get_db)):
-    try:
-        # Генерация уникального slug на основе username
+    try:        
         slug = user.username.lower().replace(" ", "-")
 
-        # Создаём новую запись
         new_user = User(
             username=user.username,
             firstname=user.firstname,
