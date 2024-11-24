@@ -6,10 +6,21 @@ class CreateUser(BaseModel):
     lastname: str
     age: int
 
-class UpdateUser(BaseModel):
+class UserResponse(BaseModel):
+    id: int
+    username: str
     firstname: str
     lastname: str
     age: int
+    slug: str
+
+    class Config:
+        from_attributes = True  # Вместо orm_mode
+
+class UpdateUser(BaseModel):
+    firstname: str | None = None
+    lastname: str | None = None
+    age: int | None = None
 
 
 class CreateTask(BaseModel):

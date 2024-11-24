@@ -21,9 +21,7 @@ if __name__ == "__main__":
 # # Генерация SQL-запроса для таблиц
 # print(CreateTable(Task.__table__).compile(engine))
 # print(CreateTable(User.__table__).compile(engine))
-
-
-
+#
 # from backend.db import engine, Base
 # from models import User, Task
 #

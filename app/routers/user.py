@@ -1,57 +1,87 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from sqlite3 import IntegrityError
+
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import insert, select, update, delete
-from typing import List
+from typing import Annotated
 from slugify import slugify
 
 from app.backend.db_depends import get_db
-from app.models.user import User
-from app.schemas import CreateUser, UpdateUser
+from app.models import User
+from app.schemas import CreateUser, UpdateUser, UserResponse
 
-router = APIRouter()
+router = APIRouter(tags=["user"]) # убрано: prefix="/user",
 
-# Получить всех пользователей
-@router.get("/", response_model=List[CreateUser])
-def all_users(db: Session = Depends(get_db)):
+# Маршрут для получения всех пользователей
+@router.get("/")
+async def all_users(db: Annotated[Session, Depends(get_db)]):
     users = db.scalars(select(User)).all()
     return users
 
-# Получить пользователя по ID
+# Маршрут для получения пользователя по ID
 @router.get("/{user_id}")
-def user_by_id(user_id: int, db: Session = Depends(get_db)):
+async def user_by_id(user_id: int, db: Annotated[Session, Depends(get_db)]):
     user = db.scalar(select(User).where(User.id == user_id))
-    if user is None:
-        raise HTTPException(status_code=404, detail="User was not found")
-    return user
+    if user:
+        return user
+    raise HTTPException(status_code=404, detail="User was not found")
 
-# Создать нового пользователя
-@router.post("/create", status_code=status.HTTP_201_CREATED)
-def create_user(user: CreateUser, db: Session = Depends(get_db)):
-    slugified_username = slugify(user.username)
-    new_user = User(username=slugified_username, **user.dict())
-    db.add(new_user)
-    db.commit()
-    return {"status_code": status.HTTP_201_CREATED, "transaction": "Successful"}
+# Маршрут для создания нового пользователя
+@router.post("/create", response_model=UserResponse)
+async def create_user(user: CreateUser, db: Session = Depends(get_db)):
+    try:
+        # Генерация уникального slug на основе username
+        slug = user.username.lower().replace(" ", "-")
 
-# Обновить данные пользователя
+        # Создаём новую запись
+        new_user = User(
+            username=user.username,
+            firstname=user.firstname,
+            lastname=user.lastname,
+            age=user.age,
+            slug=slug,
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)  # Возвращает обновлённый объект из БД
+
+        return new_user
+
+    except IntegrityError as e:
+        # Если нарушено уникальное ограничение (например, slug уже существует)
+        print(f"Ошибка целостности: {e}")
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Пользователь с таким slug уже существует.")
+
+    except Exception as e:
+        # Общий обработчик ошибок
+        print(f"Неизвестная ошибка: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Произошла ошибка на сервере.")
+
+
+# Маршрут для обновления данных пользователя
 @router.put("/update/{user_id}")
-def update_user(user_id: int, user: UpdateUser, db: Session = Depends(get_db)):
-    stmt = update(User).where(User.id == user_id).values(**user.dict())
+async def update_user(
+    user_id: int, user: UpdateUser, db: Annotated[Session, Depends(get_db)]
+):
+    stmt = update(User).where(User.id == user_id).values(**user.dict(exclude_unset=True))
     result = db.execute(stmt)
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="User was not found")
     db.commit()
-    return {"status_code": status.HTTP_200_OK, "transaction": "User update is successful!"}
+    if result.rowcount:
+        return {"status_code": status.HTTP_200_OK, "transaction": "User update is successful!"}
+    raise HTTPException(status_code=404, detail="User was not found")
 
-# Удалить пользователя
+# Маршрут для удаления пользователя
 @router.delete("/delete/{user_id}")
-def delete_user(user_id: int, db: Session = Depends(get_db)):
+async def delete_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
     stmt = delete(User).where(User.id == user_id)
     result = db.execute(stmt)
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="User was not found")
     db.commit()
-    return {"status_code": status.HTTP_200_OK, "transaction": "User deleted successfully!"}
+    if result.rowcount:
+        return {"status_code": status.HTTP_200_OK, "transaction": "User was deleted successfully!"}
+    raise HTTPException(status_code=404, detail="User was not found")
+
 
 
 
